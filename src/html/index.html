@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en-sv">
+    <head>
+        <title>Nanogram solver</title>
+        <meta charset="UTF-8" />
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body>
+        <div id="introView">
+            <fieldset>
+                <legend>
+                    <h1>Nanogram Solver</h1>
+                </legend>
+                <label>
+                    <span>Width:</span>
+                    <input type="number" id="width" value="10" />
+                </label>
+                <label>
+                    <span>Height:</span>
+                    <input type="number" id="height" value="10" />
+                </label>
+                <label>
+                    <span hidden>Start:</span>
+                    <input type="button" id="startButton" value="Start" />
+                </label>
+            </fieldset>
+        </div>
+        <div id="solverView" hidden></div>
+        <canvas id="gridView" hidden></canvas>
+        <script type="module" src="es6.js"></script>
+        <script nomodule src="es5.js"></script>
+    </body>
+</html>
