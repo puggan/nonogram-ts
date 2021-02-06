@@ -54,6 +54,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const widthInput = document.getElementById('width') as HTMLInputElement;
     const heightInput = document.getElementById('height') as HTMLInputElement;
 
+    const animationFrame = () => {
+        let resolve = null
+        const promise = new Promise(r => resolve = r)
+        window.requestAnimationFrame(resolve)
+        return promise
+    };
+
     const init = () => {
         const gameWidth = localStorage.getItem('width');
         const gameHeight = localStorage.getItem('height');
@@ -143,8 +150,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         gameMainStatus();
     };
-    window['nano'] = window['nano'] || {};
-    window['nano']['statusAll'] = statusAll;
+    window['nono'] = window['nono'] || {};
+    window['nono']['statusAll'] = statusAll;
 
     const statusBoxSyncNextChain = (startBlock: Nonogram.Block) => {
         let block = startBlock;
@@ -529,8 +536,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         redrawGrid();
     };
-    window['nano'] = window['nano'] || {};
-    window['nano']['redraw'] = redraw;
+    window['nono'] = window['nono'] || {};
+    window['nono']['redraw'] = redraw;
     const redrawHead = () => {
         if (game.status.global) {
             gameGrid.fillStyle = game.status.global < 0 ? '#FCC' : '#CFC';
@@ -549,6 +556,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const redrawCol = (x: number) => {
         const halfBox = game.config.scale / 2;
         let top = game.config.yOffset - game.cols[x].length * game.config.scale + halfBox;
+        if (top < 0) {
+            return false;
+        }
         const left = game.config.xOffset + x * game.config.scale + halfBox;
         gameGrid.fillStyle = x & 1 ? '#FFF' : '#CCC';
         gameGrid.fillRect(left - halfBox, 0, game.config.scale, game.config.yOffset);
@@ -564,11 +574,25 @@ document.addEventListener('DOMContentLoaded', () => {
             bitMask *= 2;
             top += game.config.scale;
         }
+        if (x > 0 && x < game.config.width -1 && (x + 1) % 5 < 2 && game.status.global < 1) {
+            const borderWidth = Math.max(1, Math.floor(game.config.scale / 30));
+            gameGrid.fillStyle = 'black';
+            if (x % 5 === 4) {
+                gameGrid.fillRect(left + halfBox - borderWidth, 0, borderWidth, game.config.yOffset);
+            } else {
+                gameGrid.fillStyle = 'black';
+                gameGrid.fillRect(left - halfBox, 0, borderWidth, game.config.yOffset);
+            }
+        }
+        return true;
     };
     const redrawRow = (y: number) => {
         const halfBox = game.config.scale / 2;
         const top = game.config.yOffset + y * game.config.scale + halfBox;
         let left = game.config.xOffset - game.rows[y].length * game.config.scale + halfBox;
+        if (left < 0) {
+            return false;
+        }
         gameGrid.fillStyle = y & 1 ? '#FFF' : '#CCC';
         gameGrid.fillRect(0, top - halfBox, game.config.xOffset, game.config.scale);
         gameGrid.font = game.config.scale * .8 + "px Monospace";
@@ -583,6 +607,17 @@ document.addEventListener('DOMContentLoaded', () => {
             bitMask *= 2;
             left += game.config.scale;
         }
+        if (y > 0 && y < game.config.height -1 && (y + 1) % 5 < 2 && game.status.global < 1) {
+            const borderWidth = Math.max(1, Math.floor(game.config.scale / 30));
+            gameGrid.fillStyle = 'black';
+            if (y % 5 === 4) {
+                gameGrid.fillRect(0, top + halfBox - borderWidth, game.config.xOffset, borderWidth);
+            } else {
+                gameGrid.fillStyle = 'black';
+                gameGrid.fillRect(0, top - halfBox, game.config.xOffset, borderWidth);
+            }
+        }
+        return true;
     };
 
     const draw = (x: number, y: number, type: Nonogram.colorIndexMay) => {
@@ -611,8 +646,13 @@ document.addEventListener('DOMContentLoaded', () => {
             gameGrid.fillStyle = type ? 'black' : 'white';
         }
 
-        // draw selected color inside of the border
-        gameGrid.fillRect(xPos + 1, yPos + 1, game.config.scale - 2, game.config.scale - 2);
+        if(game.status.global > 0) {
+            // draw selected color even on the border
+            gameGrid.fillRect(xPos, yPos, game.config.scale, game.config.scale);
+        } else {
+            // draw selected color inside of the border
+            gameGrid.fillRect(xPos + 1, yPos + 1, game.config.scale - 2, game.config.scale - 2);
+        }
     };
 
     const gridClick = (x: number, y: number, reverse: boolean) => {
@@ -635,20 +675,26 @@ document.addEventListener('DOMContentLoaded', () => {
             redrawRow(y);
         }
         if (oldGlobal !== gameMainStatus()) {
-            redrawHead();
+            if (game.status.global > 0) {
+                redraw(false);
+            } else {
+                redrawHead();
+            }
         }
     }
 
     const colEdit = (x: number) => {
         const oldCol = game.cols[x].join(' ');
         const newCol = prompt('Config col ' + (1 + x), oldCol);
-        if (newCol === null || oldCol === newCol) {
-            return;
+        if (newCol === null) {
+            return false;
+        } else if (oldCol === newCol) {
+            return true;
         }
         if (newCol === '') {
             game.cols[x].length = 0;
             save(game);
-            return;
+            return true;
         }
         const newListStr = newCol.split(/[ ,]+/g);
         const newList = [];
@@ -674,8 +720,10 @@ document.addEventListener('DOMContentLoaded', () => {
         game.cols[x] = newList;
         save(game);
         game.status.cols[x] = statusCol(x);
-        redrawCol(x);
-        return;
+        if (!redrawCol(x)) {
+            redraw(true);
+        }
+        return true;
     }
 
     const solveCol = (x: number): boolean => {
@@ -713,7 +761,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 redrawCol(x);
             }
             if (oldGlobal !== gameMainStatus()) {
-                redrawHead();
+                if (game.status.global > 0) {
+                    redraw(false);
+                } else {
+                    redrawHead();
+                }
             }
             save(game);
         }
@@ -723,7 +775,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const colClick = (x: number, force: boolean) => {
         if (force || game.cols[x].length <= 0) {
-            return colEdit(x);
+            if (colEdit(x)) {
+                (async () => {
+                    await animationFrame();
+                    while(++x < game.config.width && game.cols[x].length <= 0 && colEdit(x)) {
+                        await animationFrame();
+                    }
+                })();
+            }
+            return;
         }
         solveCol(x);
     }
@@ -731,13 +791,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const rowEdit = (y: number) => {
         const oldRow = game.rows[y].join(' ');
         const newRow = prompt('Config row ' + (1 + y), oldRow);
-        if (newRow === null || oldRow === newRow) {
-            return;
+        if (newRow === null) {
+            return false;
+        } else if (oldRow === newRow) {
+            return true;
         }
         if (newRow === '') {
             game.rows[y].length = 0;
             save(game);
-            return;
+            return true;
         }
         const newListStr = newRow.split(/[ ,]+/g);
         const newList = [];
@@ -763,8 +825,10 @@ document.addEventListener('DOMContentLoaded', () => {
         game.rows[y] = newList;
         save(game);
         game.status.rows[y] = statusRow(y);
-        redrawRow(y);
-        return;
+        if (!redrawRow(y)) {
+            redraw(true);
+        }
+        return true;
     }
 
     const solveRow = (y: number): boolean => {
@@ -797,7 +861,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 redrawRow(y);
             }
             if (oldGlobal !== gameMainStatus()) {
-                redrawHead();
+                if (game.status.global > 0) {
+                    redraw(false);
+                } else {
+                    redrawHead();
+                }
             }
             save(game);
         }
@@ -807,7 +875,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const rowClick = (y: number, force: boolean) => {
         if (force || game.rows[y].length <= 0) {
-            return rowEdit(y);
+            if (rowEdit(y)) {
+                (async () => {
+                    await animationFrame();
+                    while(++y < game.config.height && game.rows[y].length <= 0 && rowEdit(y)) {
+                        await animationFrame();
+                    }
+                })();
+            }
+            return;
         }
         solveRow(y);
     }
@@ -832,6 +908,20 @@ document.addEventListener('DOMContentLoaded', () => {
             location.reload();
         } else {
             load(game);
+            (async () => {
+                for (let x = 0; x < game.config.width; x++) {
+                    if (!colEdit(x)) {
+                        return;
+                    }
+                    await animationFrame();
+                }
+                for (let y = 0; y < game.config.height; y++) {
+                    if (!rowEdit(y)) {
+                        return;
+                    }
+                    await animationFrame();
+                }
+            })();
         }
     }
 
