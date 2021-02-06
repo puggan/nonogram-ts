@@ -21,11 +21,26 @@
                 </label>
                 <label>
                     <span hidden>Start:</span>
-                    <input type="button" id="startButton" value="Start" />
+                    <input type="submit" value="Start" />
                 </label>
             </fieldset>
         </div>
-        <div id="solverView" hidden></div>
+        <div id="importView">
+            <h2>Import Game-file (.non)</h2>
+            <label>
+                <span>Upload file:</span>
+                <input type="file" />
+            </label>
+            <label>
+                <span>Import content:</span><br/>
+                <textarea></textarea>
+            </label>
+            <input type="submit" value="Import" />
+            <p>
+                <span>Game-files can be found at</span>
+                <a href="https://github.com/mikix/nonogram-db/tree/master/db" target="_blank">nonogram-db</a>.
+            </p>
+        </div>
         <canvas id="gridView" hidden></canvas>
         <script type="module" src="es6.js"></script>
         <script nomodule src="es5.js"></script>

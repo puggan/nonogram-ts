@@ -52,20 +52,37 @@ declare namespace Nonogram {
 
 document.addEventListener('DOMContentLoaded', () => {
     const introView = document.getElementById('introView') as HTMLDivElement;
-    const solverView = document.getElementById('solverView') as HTMLDivElement;
+    const importView = document.getElementById('importView') as HTMLDivElement;
     const gridView = document.getElementById('gridView') as HTMLCanvasElement;
     const gameGrid = gridView.getContext("2d");
 
-    const startButton = document.getElementById('startButton') as HTMLInputElement;
+    const startButton = introView.querySelector('input[type="submit"]') as HTMLInputElement;
+    const importFile = importView.querySelector('input[type="file"]') as HTMLInputElement;
+    const importText = importView.querySelector('textarea');
+    const importButton = importView.querySelector('input[type="submit"]') as HTMLInputElement;
     const widthInput = document.getElementById('width') as HTMLInputElement;
     const heightInput = document.getElementById('height') as HTMLInputElement;
 
     const animationFrame = () => {
-        let resolve = null
-        const promise = new Promise(r => resolve = r)
-        window.requestAnimationFrame(resolve)
-        return promise
+        let resolve = null;
+        const promise = new Promise(r => resolve = r);
+        window.requestAnimationFrame(resolve);
+        return promise;
     };
+    const fileReader = async (fileInput: HTMLInputElement) => {
+        const promise = new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            const ok = () => resolve(reader.result);
+            const fail = () => reject(reader.error);
+            reader.addEventListener('load', ok);
+            reader.addEventListener('abort', fail);
+            reader.addEventListener('error', fail);
+            reader.readAsText(fileInput.files[0]);
+        });
+        await promise;
+        fileInput.value = null;
+        return promise;
+    }
 
     const init = () => {
         const gameWidth = localStorage.getItem('width');
@@ -86,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let game: Nonogram.Game | null = null;
     const load = (newGame: Nonogram.Game) => {
         introView.hidden = true;
+        importView.hidden = true;
         gridView.hidden = false;
         game = newGame;
         statusAll();
@@ -497,8 +515,109 @@ document.addEventListener('DOMContentLoaded', () => {
 
         start(+gameWidth, +gameHeight);
     };
+
+    const importUpload = async () => {
+        if(!importFile.value) {
+            return;
+        }
+
+        importText.value = await fileReader(importFile) as string;
+    };
+
+    const importButtonAction = () => {
+        const importParts = importText.value.split('\n====\n');
+        let availableParts = [];
+        let partNames = [];
+        let selectedIndex = 0;
+        const widthRegexp = /^width (\d+)$/m;
+        const heightRegexp = /^height (\d+)$/m;
+        const titleRegexp = /^title "([^"]+)"/m;
+        const entityConverter = document.createElement('textarea');
+        if (importParts.length > 1) {
+            for (const part of importParts) {
+                const width = +widthRegexp.exec(part)?.[1];
+                const height = +heightRegexp.exec(part)?.[1];
+                const titleRaw = titleRegexp.exec(part)?.[1] || 'Nonogram';
+                entityConverter.innerHTML = titleRaw;
+                const title = entityConverter.value;
+                if (width > 0 && height > 0) {
+                    availableParts.push(part);
+                    partNames.push(`${title} ${width}x${height}`);
+                }
+            }
+            if (availableParts.length > 1) {
+                selectedIndex = +prompt('Select game, 0-' + (availableParts.length - 1));
+            }
+        } else {
+            availableParts.push(importParts[0]);
+            const width = +widthRegexp.exec(importParts[0])?.[1];
+            const height = +heightRegexp.exec(importParts[0])?.[1];
+            const titleRaw = titleRegexp.exec(importParts[0])?.[1] || 'Nonogram';
+            entityConverter.innerHTML = titleRaw;
+            const title = entityConverter.value;
+            partNames.push(`${title} ${width}x${height}`);
+            if (width < 1 || height < 1) {
+                console.error('failed to read file: ', {width, height, title, content: importParts[0]});
+                alert('failed to read file: ' + title);
+                throw new Error('failed to read file: ' + title);
+            }
+        }
+
+        const part = availableParts?.[selectedIndex] || '';
+        const width = +widthRegexp.exec(part)?.[1];
+        const height = +heightRegexp.exec(part)?.[1];
+        const title = titleRegexp.exec(part)?.[1] || 'Nonogram';
+        if (width < 1 || height < 1) {
+            console.error('failed to read part: ', {selectedIndex, width, height, title, content: part});
+            alert('failed to read part: ' + title);
+            throw new Error('failed to read part: ' + title);
+        }
+
+        const colRules = (new RegExp("(^|\n)columns(\n[^\n]+){" + width + "}(\n|$)")).exec(part)?.[0].trim().split("\n").slice(1);
+        const rowRules = (new RegExp("(^|\n)rows(\n[^\n]+){" + height + "}(\n|$)")).exec(part)?.[0].trim().split("\n").slice(1);
+
+        localStorage.setItem('width', '' + width);
+        localStorage.setItem('height', '' + height);
+        start(width, height);
+
+        const errors: Error[] = [];
+        for(let x = 0; x < width; x++) {
+            try {
+                game.cols[x] = intList(colRules[x], game.config.height, 'col');
+            } catch (e) {
+                errors.push(e);
+            }
+        }
+        for(let y = 0; y < height; y++) {
+            try {
+                game.rows[y] = intList(rowRules[y], game.config.width, 'row');
+            } catch (e) {
+                errors.push(e as Error);
+            }
+        }
+
+        if(errors.length === 1) {
+            alert(errors[0]);
+            throw errors[0];
+        }
+        if (errors.length > 1) {
+            const errorMessages = [];
+            for(const error of errors) {
+                errorMessages.push(error.message)
+            }
+            const errorMessage = errorMessages.join("\n");
+            alert(errorMessage);
+            const error = new Error(errorMessage);
+            error['cause'] = errors;
+            throw error;
+        }
+        save(game);
+        load(game);
+    };
     const connectListeners = () => {
         startButton.addEventListener('click', startButtonAction, {once: false, passive: true});
+        importButton.addEventListener('click', importButtonAction, {once: false, passive: true});
+        importFile.addEventListener('change', importUpload,{once: false, passive: true});
         gridView.addEventListener('click', gridHandler, {once: false, passive: true});
         gridView.addEventListener('mousedown', dragStartHandler, {once: false, passive: true});
     };
@@ -690,6 +809,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    const intList = (input: string, maxLength: number, type: 'col' | 'row') => {
+        const newListStr = input.split(/[ ,]+/g);
+        const newList = [];
+        let sum = 0;
+        for (const valueStr of newListStr) {
+            const value = Math.floor(+valueStr);
+            if (value > 0) {
+                newList.push(value);
+            }
+            sum += value;
+        }
+        if (newList.length < 1) {
+            console.error(`Invalid ${type}: ${input}`);
+            throw new Error(`Invalid ${type}: ${input}`);
+        }
+        if (sum + newList.length > maxLength + 1) {
+            console.error(`Invalid ${type}-size: ${input}`);
+            console.error(newList);
+            throw new Error(`Invalid ${type}-size: ${input}`);
+        }
+        return newList;
+    };
+
     const colEdit = (x: number) => {
         const oldCol = game.cols[x].join(' ');
         const newCol = prompt('Config col ' + (1 + x), oldCol);
@@ -703,28 +845,12 @@ document.addEventListener('DOMContentLoaded', () => {
             save(game);
             return true;
         }
-        const newListStr = newCol.split(/[ ,]+/g);
-        const newList = [];
-        let sum = 0;
-        for (const valueStr of newListStr) {
-            const value = Math.floor(+valueStr);
-            if (value > 0) {
-                newList.push(value);
-            }
-            sum += value;
+        try {
+            game.cols[x] = intList(newCol, game.config.height, 'col');
+        } catch (e) {
+            alert((e as Error).message);
+            throw e;
         }
-        if (newList.length < 1) {
-            console.error('Invalid col: ' + newCol);
-            alert('Invalid col: ' + newCol);
-            return;
-        }
-        if (sum + newList.length > game.config.height + 1) {
-            console.error('Invalid col-size: ' + newCol);
-            console.error(newList);
-            alert('Invalid col-size: ' + newCol);
-            return;
-        }
-        game.cols[x] = newList;
         save(game);
         game.status.cols[x] = statusCol(x);
         if (!redrawCol(x)) {
@@ -836,34 +962,12 @@ document.addEventListener('DOMContentLoaded', () => {
             save(game);
             return true;
         }
-        const newListStr = newRow.split(/[ ,]+/g);
-        const newList = [];
-        let sum = 0;
-        for (const valueStr of newListStr) {
-            const value = Math.floor(+valueStr);
-            if (value > 0) {
-                newList.push(value);
-            }
-            sum += value;
+        try {
+            game.rows[y] = intList(newRow, game.config.width, 'row');
+        } catch (e) {
+            alert((e as Error).message);
+            throw e;
         }
-        if (newList.length < 1) {
-            console.error('Invalid row: ' + newRow);
-            alert('Invalid row: ' + newRow);
-            return;
-        }
-        if (sum + newList.length > game.config.width + 1) {
-            console.error('Invalid row-size: ' + newRow);
-            console.error({
-                newList,
-                width: game.config.width,
-                sum,
-                length: newList.length,
-                max: sum + newList.length - 1
-            });
-            alert('Invalid row-size: ' + newRow);
-            return;
-        }
-        game.rows[y] = newList;
         save(game);
         game.status.rows[y] = statusRow(y);
         if (!redrawRow(y)) {
