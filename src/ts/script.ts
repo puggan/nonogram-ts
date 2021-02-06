@@ -1,23 +1,48 @@
-interface GameConfig {
-    height: number;
-    scale: number;
-    width: number;
-    xOffset: number;
-    yOffset: number;
+declare namespace Nonogram {
+    interface Config {
+        height: number;
+        scale: number;
+        width: number;
+        xOffset: number;
+        yOffset: number;
+    }
+    interface Status {
+        cols: number[];
+        rows: number[];
+        global: number;
+    }
+    interface Game {
+        cols: number[][];
+        config: Config;
+        grid: colorIndexMay[][];
+        rows: number[][];
+        status: Status;
+    }
+    interface Range {
+        end: number;
+        start: number;
+    }
+    interface Interval {
+        max: number;
+        min: number;
+    }
+    interface RangeInterval {
+        end: Interval;
+        start: Interval;
+    }
+
+    interface Block extends RangeInterval {
+        length: Interval;
+        next: Block|null;
+        prev: Block|null;
+        type: 0|1;
+        possibilities: Range[];
+    }
+    // 0: white, 1: black
+    type colorIndexReal = 0|1;
+    // -1: gray
+    type colorIndexMay = -1|colorIndexReal;
 }
-interface GameStatus {
-    cols: number[];
-    rows: number[];
-    global: number;
-}
-interface Game {
-    cols: number[][];
-    config: GameConfig;
-    grid: colorIndex[][];
-    rows: number[][];
-    status: GameStatus;
-}
-type colorIndex = -1|0|1;
 
 document.addEventListener('DOMContentLoaded', () => {
     const introView = document.getElementById('introView') as HTMLDivElement;
@@ -40,22 +65,74 @@ document.addEventListener('DOMContentLoaded', () => {
             heightInput.value = gameHeight;
         }
         if (gameRaw) {
-            const game = JSON.parse(gameRaw) as Game;
+            const game = JSON.parse(gameRaw) as Nonogram.Game;
             load(game);
         }
     };
 
-    let game: Game|null = null;
-    const load = (newGame: Game) => {
+    let game: Nonogram.Game|null = null;
+    const load = (newGame: Nonogram.Game) => {
         introView.hidden = true;
         gridView.hidden = false;
         game = newGame;
         statusAll();
         redraw(true);
+        // debug:
+        window['game'] = game;
     };
-    const save = (modifedGame: Game) => {
-        localStorage.setItem('game', JSON.stringify(modifedGame));
+    const save = (modifiedGame: Nonogram.Game) => {
+        localStorage.setItem('game', JSON.stringify(modifiedGame));
     };
+    const reset = (modifiedGame: Nonogram.Game) => {
+        modifiedGame.grid = [];
+        modifiedGame.status = {
+                cols: [],
+                rows: [],
+                global: 0,
+            };
+        for (let x = 0; x < modifiedGame.config.width; x++) {
+            modifiedGame.status.cols[x] = 0;
+        }
+        for (let y = 0; y < modifiedGame.config.height; y++) {
+            modifiedGame.status.rows[y] = 0;
+            modifiedGame.grid[y] = [];
+            for (let x = 0; x < modifiedGame.config.width; x++) {
+                modifiedGame.grid[y][x] = -1;
+            }
+        }
+        return modifiedGame;
+    }
+
+    const gameMainStatus = () => {
+        let noErrors = true;
+        let allDone = true;
+        for(const status of game.status.cols) {
+            if (status < 0) {
+                noErrors = false;
+                allDone = false;
+                break;
+            }
+            if (status !== 0xFFFF) {
+                allDone = false;
+            }
+        }
+        for(const status of game.status.rows) {
+            if (status < 0) {
+                noErrors = false;
+                allDone = false;
+                break;
+            }
+            if (status !== 0xFFFF) {
+                allDone = false;
+            }
+        }
+        if (noErrors) {
+            game.status.global = allDone ? 0xFFFF : 0;
+        } else {
+            game.status.global = -0xFFFF;
+        }
+        return game.status.global;
+    }
 
     const statusAll = () => {
         for (let x = 0; x < game.config.width; x++) {
@@ -64,106 +141,304 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let y = 0; y < game.config.height; y++) {
             game.status.rows[y] = statusRow(y);
         }
+        gameMainStatus();
+    };
+    window['nano'] = window['nano'] || {};
+    window['nano']['statusAll'] = statusAll;
+
+    const statusBoxSyncNextChain = (startBlock: Nonogram.Block) => {
+        let block = startBlock;
+        while(block.next) {
+            statusBoxPossibleUpdates(block);
+            if (block.next.start.min <= block.end.min) {
+                block.next.start.min = block.end.min + 1;
+            }
+            if (block.next.start.max > block.end.max + 1) {
+                block.next.start.max = block.end.max + 1;
+            }
+            block = block.next;
+        }
+        statusBoxPossibleUpdates(block);
+    };
+    const statusBoxSyncPrevChain = (startBlock: Nonogram.Block) => {
+        let block = startBlock;
+        while(block.prev) {
+            statusBoxPossibleUpdates(block);
+            if (block.prev.end.max >= block.start.max) {
+                block.prev.end.max = block.start.max - 1;
+            }
+            if (block.prev.end.min < block.start.min - 1) {
+
+                block.prev.end.min = block.start.min - 1;
+            }
+            block = block.prev;
+        }
+        statusBoxPossibleUpdates(block);
+    };
+    const statusBoxSetBlock = (position: number, type: Nonogram.colorIndexMay, block: Nonogram.Block) => {
+        // Undefined type / gray
+        if (type === -1) {
+            return;
+        }
+
+        // Same type
+        if (block.type === type) {
+            const possibilities: Nonogram.Range[] = [];
+            for (const possibility of block.possibilities) {
+                // Cant start on a position after a position with the same type/color
+                if (position === possibility.start - 1) {
+                    continue;
+                }
+                // Cant end on a position before a position with the same type/color
+                if (position === possibility.end + 1) {
+                    continue;
+                }
+                possibilities.push(possibility);
+            }
+            if (possibilities.length < block.possibilities.length) {
+                block.possibilities = possibilities;
+            }
+            return;
+        }
+
+        // Other type
+        const possibilities: Nonogram.Range[] = [];
+        for (const possibility of block.possibilities) {
+            // All positions between start and end most be of the type of the block
+            if (possibility.start <= position && position <= possibility.end) {
+                continue;
+            }
+            possibilities.push(possibility);
+        }
+        if (possibilities.length < block.possibilities.length) {
+            block.possibilities = possibilities;
+        }
+    };
+    const statusBoxPossibleUpdates = (block: Nonogram.Block) => {
+        const lengthInterval: Nonogram.Interval = {
+            max: -Infinity,
+            min: Infinity,
+        };
+        const limits: Nonogram.RangeInterval = {
+            end: {
+                max: -Infinity,
+                min: Infinity,
+            },
+            start: {
+                max: -Infinity,
+                min: Infinity,
+            },
+        };
+        const newList: Nonogram.Range[] = [];
+        for (const range of block.possibilities) {
+            const length = range.end + 1 - range.start;
+            if (range.start < block.start.min) {
+                continue;
+            }
+            if (range.start > block.start.max) {
+                continue;
+            }
+            if (range.end < block.end.min) {
+                continue;
+            }
+            if (range.end > block.end.max) {
+                continue;
+            }
+            if (length < block.length.min) {
+                continue;
+            }
+            if (length > block.length.max) {
+                continue;
+            }
+            newList.push(range);
+            if (range.start < limits.start.min) {
+                limits.start.min = range.start;
+            }
+            if (range.start > limits.start.max) {
+                limits.start.max = range.start;
+            }
+            if (range.end < limits.end.min) {
+                limits.end.min = range.end;
+            }
+            if (range.end > limits.end.max) {
+                limits.end.max = range.end;
+            }
+            if (length < lengthInterval.min) {
+                lengthInterval.min = length;
+            }
+            if (length > lengthInterval.max) {
+                lengthInterval.max = length;
+            }
+        }
+        if (newList.length < block.possibilities.length) {
+            block.possibilities = newList;
+        }
+        if (block.possibilities.length > 0) {
+            block.start = limits.start;
+            block.end = limits.end;
+            block.length = lengthInterval;
+        }
+    };
+
+    const statusBoxes = (rules: number[], boxes: Nonogram.colorIndexMay[]) => {
+        const blocks = [] as Nonogram.Block[];
+        let sum = 0;
+        for(const length of rules) {
+            sum += length;
+        }
+
+        let margin = boxes.length - sum - rules.length + 1;
+
+        const firstWhite: Nonogram.Block = {
+            end: {
+                max: margin - 1,
+                min: -1,
+            },
+            length: {
+                max: margin,
+                min: 0,
+            },
+            next: null,
+            possibilities: [],
+            prev: null,
+            start: {
+                max: 0,
+                min: 0,
+            },
+            type: 0,
+        };
+        blocks.push(firstWhite);
+        let lastWhite = firstWhite;
+        let lastBlack = firstWhite;
+
+        for(const length of rules) {
+            const blackStart = lastWhite.start.min + lastWhite.length.min;
+            lastBlack = {
+                end: {
+                    max: blackStart + length - 1 + margin,
+                    min: blackStart + length - 1,
+                },
+                length: {
+                    max: length,
+                    min: length,
+                },
+                next: null,
+                possibilities: [],
+                prev: lastWhite,
+                start: {
+                    max: blackStart + margin,
+                    min: blackStart,
+                },
+                type: 1,
+            };
+            lastWhite.next = lastBlack;
+            blocks.push(lastBlack);
+
+            const whiteStart = lastBlack.end.min + 1;
+            lastWhite = {
+                end: {
+                    max: whiteStart + margin,
+                    min: whiteStart,
+                },
+                length: {
+                    max: 1 + margin,
+                    min: 1,
+                },
+                next: null,
+                possibilities: [],
+                prev: lastBlack,
+                start: {
+                    max: whiteStart + margin,
+                    min: whiteStart,
+                },
+                type: 0,
+            };
+            lastBlack.next = lastWhite;
+            blocks.push(lastWhite);
+        }
+        lastWhite.length.min--;
+        lastWhite.length.max--;
+        lastWhite.end.max--;
+        lastWhite.end.min = lastWhite.end.max;
+
+        for (const block of blocks) {
+            for (let start = block.start.min; start <= block.start.max; start++) {
+                for (let length = block.length.min; length <= block.length.max; length++) {
+                    const end = start + length - 1;
+                    if (block.end.min <= end && end <= block.end.max) {
+                        block.possibilities.push({end, start});
+                    }
+                }
+            }
+        }
+
+        statusBoxSyncNextChain(firstWhite);
+        statusBoxSyncPrevChain(lastWhite);
+
+        for (const block of blocks) {
+            for (let pos = 0; pos < boxes.length; pos++) {
+                statusBoxSetBlock(pos, boxes[pos], block)
+            }
+        }
+
+        statusBoxSyncNextChain(firstWhite);
+        statusBoxSyncPrevChain(lastWhite);
+
+        let bitMask = 1;
+        let bits = 0;
+        let allGood = true;
+        for (const block of blocks) {
+            const possibilities = block.possibilities.length;
+            if (possibilities < 1) {
+                return -0xFFFF;
+            }
+            if (block.type === 0) {
+                continue;
+            }
+            let good = possibilities === 1;
+            if (good) {
+                const solved = block.possibilities[0];
+                for (let position = solved.start; position <= solved.end; position++) {
+                    if (boxes[position] !== block.type) {
+                        good = false;
+                        break;
+                    }
+                }
+            }
+            if (good) {
+                bits = bits | bitMask;
+            } else {
+                allGood = false;
+            }
+            bitMask *= 2;
+        }
+
+        return allGood ? 0xFFFF: bits;
     };
 
     const statusCol = (x: number) => {
         if (game.cols[x].length < 1) {
             return 0;
         }
-        let colSum = 0;
-        let gridSum = 0;
-        let gridColGroups = [];
 
-        for (const status of game.cols[x]) {
-            if (status > 0) {
-                colSum += status;
-            }
-        }
-
-        let connected = false;
-        let groupSize = 0;
-
+        const boxes = [];
         for (const row of game.grid) {
-            if (row[x] === 1) {
-                connected = true;
-                groupSize++;
-                gridSum++;
-            } else if (connected) {
-                gridColGroups.push(groupSize);
-                groupSize = 0;
-                connected = false;
-            }
-        }
-        if (connected) {
-            gridColGroups.push(groupSize);
+            boxes.push(row[x]);
         }
 
-
-        if (gridSum > colSum) {
-            return -0xFFFF;
-        }
-
-        if (gridSum < colSum) {
-            return 0;
-        }
-
-        if (gridColGroups.join('-') === game.cols[x].join('-')) {
-            return 0xFFFF;
-        }
-
-        return -0xFFFF;
-    };
-
+        return statusBoxes(game.cols[x], boxes);
+    }
     const statusRow = (y: number) => {
         if (game.rows[y].length < 1) {
             return 0;
         }
-        let rowSum = 0;
-        let gridSum = 0;
-        let gridRowGroups = [];
 
-        for (const status of game.rows[y]) {
-            if (status > 0) {
-                rowSum += status;
-            }
-        }
-
-        let connected = false;
-        let groupSize = 0;
-
-        for (const status of game.grid[y]) {
-            if (status === 1) {
-                connected = true;
-                groupSize++;
-                gridSum++;
-            } else if (connected) {
-                gridRowGroups.push(groupSize);
-                groupSize = 0;
-                connected = false;
-            }
-        }
-        if (connected) {
-            gridRowGroups.push(groupSize);
-        }
-
-        if (gridSum > rowSum) {
-            return -0xFFFF;
-        }
-
-        if (gridSum < rowSum) {
-            return 0;
-        }
-
-        if (gridRowGroups.join('-') === game.rows[y].join('-')) {
-            return 0xFFFF;
-        }
-
-        return -0xFFFF;
-    };
+        return statusBoxes(game.rows[y], game.grid[y]);
+    }
 
     const start = (width: number, height: number) => {
         const scale = 10;
-        const newGame: Game = {
+        const newGame: Nonogram.Game = {
             cols: [],
             config: {
                 height,
@@ -240,6 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
         gridView.width = game.config.xOffset + game.config.width * game.config.scale;
         gridView.height = game.config.yOffset + game.config.height * game.config.scale;
         gameGrid.clearRect(0, 0, gridView.width, gridView.height);
+        redrawHead();
         for (let x = 0; x < game.config.width; x++) {
             redrawCol(x);
         }
@@ -247,6 +523,16 @@ document.addEventListener('DOMContentLoaded', () => {
             redrawRow(y);
         }
         redrawGrid();
+    };
+    window['nano'] = window['nano'] || {};
+    window['nano']['redraw'] = redraw;
+    const redrawHead = () => {
+        if (game.status.global) {
+            gameGrid.fillStyle = game.status.global < 0 ? '#FCC' : '#CFC';
+        } else {
+            gameGrid.fillStyle = 'white';
+        }
+        gameGrid.fillRect(0, 0, game.config.xOffset, game.config.yOffset);
     };
     const redrawGrid = () => {
         for (let y = 0; y < game.config.height; y++) {
@@ -294,7 +580,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const draw = (x: number, y: number, type: colorIndex) => {
+    const draw = (x: number, y: number, type: Nonogram.colorIndexMay) => {
         if (x < 0 || y < 0 || x >= game.config.width || y >= game.config.height) {
             throw new Error('Outside game-grid: ' + JSON.stringify({x, y, type}));
         }
@@ -324,99 +610,15 @@ document.addEventListener('DOMContentLoaded', () => {
         gameGrid.fillRect(xPos + 1, yPos + 1, game.config.scale - 2, game.config.scale - 2);
     };
 
-    const gridHandler = (event: MouseEvent) => {
-        const x = Math.floor((event.clientX - game.config.xOffset) / game.config.scale);
-        const y = Math.floor((event.clientY - game.config.yOffset) / game.config.scale);
-        if (x < 0) {
-            if (y < 0) {
-                if (confirm('Reset game?')) {
-                    redraw(true);
-                    return;
-                }
-            }
-            const oldRow = game.rows[y].join(' ');
-            const newRow = prompt('Config row ' + (1 + y), oldRow);
-            if (newRow === null || oldRow === newRow) {
-                return;
-            }
-            if (newRow === '') {
-                game.rows[y].length = 0;
-                save(game);
-                return;
-            }
-            const newListStr = newRow.split(/[ ,]+/g);
-            const newList = [];
-            let sum = 0;
-            for(const valueStr of newListStr) {
-                const value = Math.floor(+valueStr);
-                if (value > 0) {
-                    newList.push(value);
-                }
-                sum += value;
-            }
-            if (newList.length < 1) {
-                console.error('Invalid row: ' + newRow);
-                alert('Invalid row: ' + newRow);
-                return;
-            }
-            if (sum + newList.length > game.config.width + 1) {
-                console.error('Invalid row-size: ' + newRow);
-                console.error({newList, width: game.config.width, sum, length: newList.length, max: sum + newList.length - 1});
-                alert('Invalid row-size: ' + newRow);
-                return;
-            }
-            game.rows[y] = newList;
-            save(game);
-            game.status.rows[y] = statusRow(y);
-            redrawRow(y);
-            return;
-        }
-        if (y < 0) {
-            const oldCol = game.cols[x].join(' ');
-            const newCol = prompt('Config col ' + (1 + x), oldCol);
-            if (newCol === null || oldCol === newCol) {
-                return;
-            }
-            if (newCol === '') {
-                game.cols[x].length = 0;
-                save(game);
-                return;
-            }
-            const newListStr = newCol.split(/[ ,]+/g);
-            const newList = [];
-            let sum = 0;
-            for(const valueStr of newListStr) {
-                const value = Math.floor(+valueStr);
-                if (value > 0) {
-                    newList.push(value);
-                }
-                sum += value;
-            }
-            if (newList.length < 1) {
-                console.error('Invalid col: ' + newCol);
-                alert('Invalid col: ' + newCol);
-                return;
-            }
-            if (sum + newList.length > game.config.height + 1) {
-                console.error('Invalid col-size: ' + newCol);
-                console.error(newList);
-                alert('Invalid col-size: ' + newCol);
-                return;
-            }
-            game.cols[x] = newList;
-            save(game);
-            game.status.cols[x] = statusCol(x);
-            redrawCol(x);
-            return;
-        }
-
+    const gridClick = (x: number, y: number, reverse: boolean) => {
         const oldType = game.grid[y][x];
-        // Normal: gray(-1) => black(1) => white(0), Other: gray(-1) <= black(1) <= white(0)
-        const typeDelta = event.button > 0 ? 1 : 2;
-        const newType = (1 + oldType+ typeDelta) % 3 - 1 as colorIndex;
+        // Normal: gray(-1) => black(1) => white(0), Reverse: gray(-1) <= black(1) <= white(0)
+        const typeDelta = reverse ? 1 : 2;
+        const newType = (1 + oldType+ typeDelta) % 3 - 1 as Nonogram.colorIndexMay;
         game.grid[y][x] = newType;
         save(game);
         draw(x, y, newType);
+        const oldGlobal = game.status.global;
         const newColStatus = statusCol(x);
         if (game.status.cols[x] !== newColStatus) {
             game.status.cols[x] = newColStatus;
@@ -427,6 +629,121 @@ document.addEventListener('DOMContentLoaded', () => {
             game.status.rows[y] = newRowStatus;
             redrawRow(y);
         }
+        if (oldGlobal !== gameMainStatus()) {
+            redrawHead();
+        }
+    }
+
+    const colClick = (x: number, force: boolean) => {
+        if (game.cols[x].length > 0 && !force) {
+            return;
+        }
+        const oldCol = game.cols[x].join(' ');
+        const newCol = prompt('Config col ' + (1 + x), oldCol);
+        if (newCol === null || oldCol === newCol) {
+            return;
+        }
+        if (newCol === '') {
+            game.cols[x].length = 0;
+            save(game);
+            return;
+        }
+        const newListStr = newCol.split(/[ ,]+/g);
+        const newList = [];
+        let sum = 0;
+        for(const valueStr of newListStr) {
+            const value = Math.floor(+valueStr);
+            if (value > 0) {
+                newList.push(value);
+            }
+            sum += value;
+        }
+        if (newList.length < 1) {
+            console.error('Invalid col: ' + newCol);
+            alert('Invalid col: ' + newCol);
+            return;
+        }
+        if (sum + newList.length > game.config.height + 1) {
+            console.error('Invalid col-size: ' + newCol);
+            console.error(newList);
+            alert('Invalid col-size: ' + newCol);
+            return;
+        }
+        game.cols[x] = newList;
+        save(game);
+        game.status.cols[x] = statusCol(x);
+        redrawCol(x);
+        return;
+    }
+
+    const rowClick = (y: number, force: boolean) => {
+        if (game.rows[y].length > 0 && !force) {
+            return;
+        }
+        const oldRow = game.rows[y].join(' ');
+        const newRow = prompt('Config row ' + (1 + y), oldRow);
+        if (newRow === null || oldRow === newRow) {
+            return;
+        }
+        if (newRow === '') {
+            game.rows[y].length = 0;
+            save(game);
+            return;
+        }
+        const newListStr = newRow.split(/[ ,]+/g);
+        const newList = [];
+        let sum = 0;
+        for(const valueStr of newListStr) {
+            const value = Math.floor(+valueStr);
+            if (value > 0) {
+                newList.push(value);
+            }
+            sum += value;
+        }
+        if (newList.length < 1) {
+            console.error('Invalid row: ' + newRow);
+            alert('Invalid row: ' + newRow);
+            return;
+        }
+        if (sum + newList.length > game.config.width + 1) {
+            console.error('Invalid row-size: ' + newRow);
+            console.error({newList, width: game.config.width, sum, length: newList.length, max: sum + newList.length - 1});
+            alert('Invalid row-size: ' + newRow);
+            return;
+        }
+        game.rows[y] = newList;
+        save(game);
+        game.status.rows[y] = statusRow(y);
+        redrawRow(y);
+        return;
+    }
+
+    const headerClick = (event: MouseEvent) => {
+        if (event.ctrlKey && confirm('Delete game?')) {
+            localStorage.removeItem('game');
+            location.reload();
+        } else if (event.shiftKey && confirm('Reset game?')) {
+            save(reset(game));
+            location.reload();
+        } else {
+            load(game);
+        }
+    }
+
+    const gridHandler = (event: MouseEvent) => {
+        const x = Math.floor((event.clientX - game.config.xOffset) / game.config.scale);
+        const y = Math.floor((event.clientY - game.config.yOffset) / game.config.scale);
+        if (x < 0) {
+            if (y < 0) {
+                return headerClick(event);
+            }
+            return rowClick(y, event.shiftKey || event.ctrlKey);
+        }
+        if (y < 0) {
+            return colClick(x, event.shiftKey || event.ctrlKey);
+        }
+
+        return gridClick(x, y, event.button > 0 || event.shiftKey);
     };
 
     init();
