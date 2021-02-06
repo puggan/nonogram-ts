@@ -738,8 +738,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return false;
         }
 
+        const possibleTypes = [];
         const boxes = [];
         for (const row of game.grid) {
+            if (row[x] < 0) {
+                possibleTypes.push([]);
+            } else {
+                possibleTypes.push([row[x]]);
+            }
             boxes.push(row[x]);
         }
 
@@ -747,6 +753,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const blocks = calculateBlocks(game.cols[x], boxes);
         const oldGlobal = game.status.global;
         for (const block of blocks) {
+            for (const possibility of block.possibilities) {
+                for (let y = possibility.start; y <= possibility.end; y++) {
+                    if (possibleTypes[y].length === 0) {
+                        possibleTypes[y].push(block.type);
+                    } else if (possibleTypes[y].length === 1 && possibleTypes[y][0] !== block.type) {
+                        possibleTypes[y].push(block.type);
+                    }
+                }
+            }
             for (let y = block.start.max; y <= block.end.min; y++) {
                 if (game.grid[y][x] !== block.type) {
                     game.grid[y][x] = block.type;
@@ -757,6 +772,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         game.status.rows[y] = newRowStatus;
                         redrawRow(y);
                     }
+                }
+            }
+        }
+
+        for (let y = 0; y < game.config.height; y++) {
+            if (game.grid[y][x] === -1 && possibleTypes[y].length === 1) {
+                game.grid[y][x] = possibleTypes[y][0];
+                changed = true;
+                draw(x, y, game.grid[y][x]);
+                const newRowStatus = statusRow(y);
+                if (game.status.rows[y] !== newRowStatus) {
+                    game.status.rows[y] = newRowStatus;
+                    redrawRow(y);
                 }
             }
         }
@@ -902,26 +930,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const headerClick = (event: MouseEvent) => {
-        if (event.ctrlKey && confirm('Delete game?')) {
-            localStorage.removeItem('game');
-            location.reload();
-        } else if (event.metaKey) {
-            for (let x = 0; x < game.config.width; x++) {
-                if (solveCol(x) && !event.shiftKey) {
-                    return;
-                }
-            }
-            for (let y = 0; y < game.config.height; y++) {
-                if (solveRow(y) && !event.shiftKey) {
-                    return;
-                }
-            }
-        } else if (event.shiftKey && confirm('Reset game?')) {
-            save(reset(game));
-            location.reload();
-        } else {
-            load(game);
-            (async () => {
+        (async () => {
+            if (event.metaKey || event.altKey) {
+                let changed = false;
+                do {
+                    changed = false;
+                    for (let x = 0; x < game.config.width; x++) {
+                        if (solveCol(x)) {
+                            if (!event.shiftKey) {
+                                return;
+                            }
+                            changed = true;
+                            await animationFrame();
+                        }
+                    }
+                    for (let y = 0; y < game.config.height; y++) {
+                        if (solveRow(y)) {
+                            if (!event.shiftKey) {
+                                return;
+                            }
+                            changed = true;
+                            await animationFrame();
+                        }
+                    }
+                } while (changed && event.ctrlKey && event.shiftKey);
+            } else if (event.ctrlKey && confirm('Delete game?')) {
+                localStorage.removeItem('game');
+                location.reload();
+            } else if (event.shiftKey && confirm('Reset game?')) {
+                save(reset(game));
+                location.reload();
+            } else {
+                load(game);
                 for (let x = 0; x < game.config.width; x++) {
                     if (!colEdit(x)) {
                         return;
@@ -934,8 +974,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     await animationFrame();
                 }
-            })();
-        }
+            }
+        })();
     }
 
     const gridHandler = (event: MouseEvent) => {
