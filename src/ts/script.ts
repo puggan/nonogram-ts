@@ -494,6 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const connectListeners = () => {
         startButton.addEventListener('click', startButtonAction, {once: false, passive: true});
         gridView.addEventListener('click', gridHandler, {once: false, passive: true});
+        gridView.addEventListener('mousedown', dragStartHandler, {once: false, passive: true});
     };
 
     const reCalculateOffset = (rescale: boolean) => {
@@ -659,7 +660,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const oldType = game.grid[y][x];
         // Normal: gray(-1) => black(1) => white(0), Reverse: gray(-1) <= black(1) <= white(0)
         const typeDelta = reverse ? 1 : 2;
-        const newType = (1 + oldType+ typeDelta) % 3 - 1 as Nonogram.colorIndexMay;
+        const newType = (1 + oldType + typeDelta) % 3 - 1 as Nonogram.colorIndexMay;
         game.grid[y][x] = newType;
         save(game);
         draw(x, y, newType);
@@ -938,7 +939,123 @@ document.addEventListener('DOMContentLoaded', () => {
             return colClick(x, event.shiftKey || event.ctrlKey);
         }
 
+        if(dragLastX !== null && dragLastX === x && dragLastY !== null && dragLastY === y) {
+            dragLastX = null;
+            dragLastY = null;
+            return;
+        }
         return gridClick(x, y, event.button > 0 || event.shiftKey);
+    };
+
+    let dragType: Nonogram.colorIndexMay|null = null;
+    let dragStartX: number|null = null;
+    let dragStartY: number|null = null;
+    let dragLastX: number|null = null;
+    let dragLastY: number|null = null;
+    const dragStartHandler = (event: MouseEvent) => {
+        const x = Math.floor((event.clientX - game.config.xOffset) / game.config.scale);
+        const y = Math.floor((event.clientY - game.config.yOffset) / game.config.scale);
+        if (x < 0 || y < 0 || x >= game.config.width || y >= game.config.height) {
+            return;
+        }
+
+        const reverse = event.button > 0 || event.shiftKey;
+        const typeDelta = reverse ? 1 : 2;
+        dragType = (1 + game.grid[y][x] + typeDelta) % 3 - 1 as Nonogram.colorIndexMay;
+        dragStartX = x;
+        dragStartY = y;
+        dragLastX = x;
+        dragLastY = y;
+
+        gridView.addEventListener('mousemove', dragHandler, {once: false, passive: true});
+        gridView.addEventListener('mouseup', dragStopHandler, {once: true, passive: true});
+    };
+
+    const dragReset = (fullRedraw: boolean) => {
+        dragType = null;
+        dragStartX = null;
+        dragStartY = null;
+        if (fullRedraw) {
+            statusAll();
+            redraw(false);
+        } else {
+            redrawGrid();
+        }
+        gridView.removeEventListener('mousemove', dragHandler);
+        gridView.removeEventListener('mouseup', dragStopHandler);
+    };
+
+    const dragStopHandler = (event: MouseEvent) => {
+        if (dragStartX == null || dragStartY == null || dragType === null) {
+            return dragReset(false);
+        }
+        const mx = Math.floor((event.clientX - game.config.xOffset) / game.config.scale);
+        const my = Math.floor((event.clientY - game.config.yOffset) / game.config.scale);
+        const rx = Math.max(0, Math.min(game.config.width - 1, mx));
+        const ry = Math.max(0, Math.min(game.config.height - 1, my));
+        if(mx !== rx || my !== ry) {
+            return dragReset(false);
+        }
+
+        const x1 = rx < dragStartX ? rx : dragStartX;
+        const x2 = rx > dragStartX ? rx : dragStartX;
+        const y1 = ry < dragStartY ? ry : dragStartY;
+        const y2 = ry > dragStartY ? ry : dragStartY;
+
+        if(x1 === x2 && y1 === y2) {
+            dragLastX = null;
+            dragLastY = null;
+            return dragReset(false);
+        }
+
+        dragHandler(event);
+
+        for (let x = x1; x <= x2; x++) {
+            for (let y = y1; y <= y2; y++) {
+                game.grid[y][x] = dragType;
+            }
+        }
+
+        return dragReset(true);
+    };
+
+    const dragHandler = (event: MouseEvent) => {
+        if (dragStartX == null || dragStartY == null || dragType === null) {
+            return dragReset(false);
+        }
+        const mx = Math.floor((event.clientX - game.config.xOffset) / game.config.scale);
+        const my = Math.floor((event.clientY - game.config.yOffset) / game.config.scale);
+        const rx = mx < 0 || mx >= game.config.width - 1 ? dragStartX : mx;
+        const ry = my < 0 || my >= game.config.height - 1 ? dragStartY : my;
+
+        if (rx === dragLastX && ry === dragLastY) {
+            return;
+        }
+
+        const x1a = rx < dragStartX ? rx : dragStartX;
+        const x1b = rx < dragLastX ? rx : dragLastX;
+        const x1 = x1a < x1b ? x1a : x1b;
+
+        const x2a = rx > dragStartX ? rx : dragStartX;
+        const x2b = rx > dragLastX ? rx : dragLastX;
+        const x2 = x2a > x2b ? x2a : x2b;
+
+        const y1a = ry < dragStartY ? ry : dragStartY;
+        const y1b = ry < dragLastY ? ry : dragLastY;
+        const y1 = y1a < y1b ? y1a : y1b;
+
+        const y2a = ry > dragStartY ? ry : dragStartY;
+        const y2b = ry > dragLastY ? ry : dragLastY;
+        const y2 = y2a > y2b ? y2a : y2b;
+
+        for (let x = x1; x <= x2; x++) {
+            for (let y = y1; y <= y2; y++) {
+                draw(x, y, x1a <= x && x <= x2a && y1a <= y && y <= y2a ? dragType : game.grid[y][x]);
+            }
+        }
+
+        dragLastX = rx;
+        dragLastY = ry;
     };
 
     init();
