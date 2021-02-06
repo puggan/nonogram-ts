@@ -280,7 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const statusBoxes = (rules: number[], boxes: Nonogram.colorIndexMay[]) => {
+    const calculateBlocks = (rules: number[], boxes: Nonogram.colorIndexMay[]) => {
         const blocks = [] as Nonogram.Block[];
         let sum = 0;
         for(const length of rules) {
@@ -383,6 +383,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         statusBoxSyncNextChain(firstWhite);
         statusBoxSyncPrevChain(lastWhite);
+
+        return blocks;
+    };
+    const statusBoxes = (rules: number[], boxes: Nonogram.colorIndexMay[]) => {
+        const blocks = calculateBlocks(rules, boxes);
 
         let bitMask = 1;
         let bits = 0;
@@ -634,10 +639,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    const colClick = (x: number, force: boolean) => {
-        if (game.cols[x].length > 0 && !force) {
-            return;
-        }
+    const colEdit = (x: number) => {
         const oldCol = game.cols[x].join(' ');
         const newCol = prompt('Config col ' + (1 + x), oldCol);
         if (newCol === null || oldCol === newCol) {
@@ -676,10 +678,57 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    const rowClick = (y: number, force: boolean) => {
-        if (game.rows[y].length > 0 && !force) {
-            return;
+    const solveCol = (x: number): boolean => {
+        if (game.cols[x].length < 1) {
+            return false;
         }
+
+        const boxes = [];
+        for (const row of game.grid) {
+            boxes.push(row[x]);
+        }
+
+        let changed = false;
+        const blocks = calculateBlocks(game.cols[x], boxes);
+        const oldGlobal = game.status.global;
+        for (const block of blocks) {
+            for (let y = block.start.max; y <= block.end.min; y++) {
+                if (game.grid[y][x] !== block.type) {
+                    game.grid[y][x] = block.type;
+                    changed = true;
+                    draw(x, y, block.type);
+                    const newRowStatus = statusRow(y);
+                    if (game.status.rows[y] !== newRowStatus) {
+                        game.status.rows[y] = newRowStatus;
+                        redrawRow(y);
+                    }
+                }
+            }
+        }
+
+        if (changed) {
+            const newColStatus = statusCol(x);
+            if (game.status.cols[x] !== newColStatus) {
+                game.status.cols[x] = newColStatus;
+                redrawCol(x);
+            }
+            if (oldGlobal !== gameMainStatus()) {
+                redrawHead();
+            }
+            save(game);
+        }
+
+        return changed;
+    };
+
+    const colClick = (x: number, force: boolean) => {
+        if (force || game.cols[x].length <= 0) {
+            return colEdit(x);
+        }
+        solveCol(x);
+    }
+
+    const rowEdit = (y: number) => {
         const oldRow = game.rows[y].join(' ');
         const newRow = prompt('Config row ' + (1 + y), oldRow);
         if (newRow === null || oldRow === newRow) {
@@ -718,10 +767,66 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
+    const solveRow = (y: number): boolean => {
+        if (game.rows[y].length < 1) {
+            return false;
+        }
+
+        let changed = false;
+        const blocks = calculateBlocks(game.rows[y], game.grid[y]);
+        const oldGlobal = game.status.global;
+        for (const block of blocks) {
+            for (let x = block.start.max; x <= block.end.min; x++) {
+                if (game.grid[y][x] !== block.type) {
+                    game.grid[y][x] = block.type;
+                    changed = true;
+                    draw(x, y, block.type);
+                    const newColStatus = statusCol(x);
+                    if (game.status.cols[x] !== newColStatus) {
+                        game.status.cols[x] = newColStatus;
+                        redrawCol(x);
+                    }
+                }
+            }
+        }
+
+        if (changed) {
+            const newRowStatus = statusRow(y);
+            if (game.status.rows[y] !== newRowStatus) {
+                game.status.rows[y] = newRowStatus;
+                redrawRow(y);
+            }
+            if (oldGlobal !== gameMainStatus()) {
+                redrawHead();
+            }
+            save(game);
+        }
+
+        return changed;
+    };
+
+    const rowClick = (y: number, force: boolean) => {
+        if (force || game.rows[y].length <= 0) {
+            return rowEdit(y);
+        }
+        solveRow(y);
+    }
+
     const headerClick = (event: MouseEvent) => {
         if (event.ctrlKey && confirm('Delete game?')) {
             localStorage.removeItem('game');
             location.reload();
+        } else if (event.metaKey) {
+            for (let x = 0; x < game.config.width; x++) {
+                if (solveCol(x) && !event.shiftKey) {
+                    return;
+                }
+            }
+            for (let y = 0; y < game.config.height; y++) {
+                if (solveRow(y) && !event.shiftKey) {
+                    return;
+                }
+            }
         } else if (event.shiftKey && confirm('Reset game?')) {
             save(reset(game));
             location.reload();
