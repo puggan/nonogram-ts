@@ -6,11 +6,13 @@ declare namespace Nonogram {
         xOffset: number;
         yOffset: number;
     }
+
     interface Status {
         cols: number[];
         rows: number[];
         global: number;
     }
+
     interface Game {
         cols: number[][];
         config: Config;
@@ -18,14 +20,17 @@ declare namespace Nonogram {
         rows: number[][];
         status: Status;
     }
+
     interface Range {
         end: number;
         start: number;
     }
+
     interface Interval {
         max: number;
         min: number;
     }
+
     interface RangeInterval {
         end: Interval;
         start: Interval;
@@ -33,15 +38,16 @@ declare namespace Nonogram {
 
     interface Block extends RangeInterval {
         length: Interval;
-        next: Block|null;
-        prev: Block|null;
-        type: 0|1;
+        next: Block | null;
+        prev: Block | null;
+        type: 0 | 1;
         possibilities: Range[];
     }
+
     // 0: white, 1: black
-    type colorIndexReal = 0|1;
+    type colorIndexReal = 0 | 1;
     // -1: gray
-    type colorIndexMay = -1|colorIndexReal;
+    type colorIndexMay = -1 | colorIndexReal;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -77,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    let game: Nonogram.Game|null = null;
+    let game: Nonogram.Game | null = null;
     const load = (newGame: Nonogram.Game) => {
         introView.hidden = true;
         gridView.hidden = false;
@@ -93,10 +99,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const reset = (modifiedGame: Nonogram.Game) => {
         modifiedGame.grid = [];
         modifiedGame.status = {
-                cols: [],
-                rows: [],
-                global: 0,
-            };
+            cols: [],
+            rows: [],
+            global: 0,
+        };
         for (let x = 0; x < modifiedGame.config.width; x++) {
             modifiedGame.status.cols[x] = 0;
         }
@@ -113,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const gameMainStatus = () => {
         let noErrors = true;
         let allDone = true;
-        for(const status of game.status.cols) {
+        for (const status of game.status.cols) {
             if (status < 0) {
                 noErrors = false;
                 allDone = false;
@@ -123,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 allDone = false;
             }
         }
-        for(const status of game.status.rows) {
+        for (const status of game.status.rows) {
             if (status < 0) {
                 noErrors = false;
                 allDone = false;
@@ -155,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const statusBoxSyncNextChain = (startBlock: Nonogram.Block) => {
         let block = startBlock;
-        while(block.next) {
+        while (block.next) {
             statusBoxPossibleUpdates(block);
             if (block.next.start.min <= block.end.min) {
                 block.next.start.min = block.end.min + 1;
@@ -169,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const statusBoxSyncPrevChain = (startBlock: Nonogram.Block) => {
         let block = startBlock;
-        while(block.prev) {
+        while (block.prev) {
             statusBoxPossibleUpdates(block);
             if (block.prev.end.max >= block.start.max) {
                 block.prev.end.max = block.start.max - 1;
@@ -290,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const calculateBlocks = (rules: number[], boxes: Nonogram.colorIndexMay[]) => {
         const blocks = [] as Nonogram.Block[];
         let sum = 0;
-        for(const length of rules) {
+        for (const length of rules) {
             sum += length;
         }
 
@@ -318,7 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let lastWhite = firstWhite;
         let lastBlack = firstWhite;
 
-        for(const length of rules) {
+        for (const length of rules) {
             const blackStart = lastWhite.start.min + lastWhite.length.min;
             lastBlack = {
                 end: {
@@ -425,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bitMask *= 2;
         }
 
-        return allGood ? 0xFFFF: bits;
+        return allGood ? 0xFFFF : bits;
     };
 
     const statusCol = (x: number) => {
@@ -500,12 +506,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const reCalculateOffset = (rescale: boolean) => {
         let maxColRulesCount = 1;
         let maxRowRulesCount = 1;
-        for(const col of game.cols) {
+        for (const col of game.cols) {
             if (col.length > maxColRulesCount) {
                 maxColRulesCount = col.length;
             }
         }
-        for(const row of game.rows) {
+        for (const row of game.rows) {
             if (row.length > maxRowRulesCount) {
                 maxRowRulesCount = row.length;
             }
@@ -575,7 +581,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bitMask *= 2;
             top += game.config.scale;
         }
-        if (x > 0 && x < game.config.width -1 && (x + 1) % 5 < 2 && game.status.global < 1) {
+        if (x > 0 && x < game.config.width - 1 && (x + 1) % 5 < 2 && game.status.global < 1) {
             const borderWidth = Math.max(1, Math.floor(game.config.scale / 30));
             gameGrid.fillStyle = 'black';
             if (x % 5 === 4) {
@@ -608,7 +614,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bitMask *= 2;
             left += game.config.scale;
         }
-        if (y > 0 && y < game.config.height -1 && (y + 1) % 5 < 2 && game.status.global < 1) {
+        if (y > 0 && y < game.config.height - 1 && (y + 1) % 5 < 2 && game.status.global < 1) {
             const borderWidth = Math.max(1, Math.floor(game.config.scale / 30));
             gameGrid.fillStyle = 'black';
             if (y % 5 === 4) {
@@ -647,7 +653,7 @@ document.addEventListener('DOMContentLoaded', () => {
             gameGrid.fillStyle = type ? 'black' : 'white';
         }
 
-        if(game.status.global > 0) {
+        if (game.status.global > 0) {
             // draw selected color even on the border
             gameGrid.fillRect(xPos, yPos, game.config.scale, game.config.scale);
         } else {
@@ -700,7 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const newListStr = newCol.split(/[ ,]+/g);
         const newList = [];
         let sum = 0;
-        for(const valueStr of newListStr) {
+        for (const valueStr of newListStr) {
             const value = Math.floor(+valueStr);
             if (value > 0) {
                 newList.push(value);
@@ -745,7 +751,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (game.grid[y][x] !== block.type) {
                     game.grid[y][x] = block.type;
                     changed = true;
-                    draw(x, y, block.type);
+                    draw(x, y, game.grid[y][x]);
                     const newRowStatus = statusRow(y);
                     if (game.status.rows[y] !== newRowStatus) {
                         game.status.rows[y] = newRowStatus;
@@ -779,7 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (colEdit(x)) {
                 (async () => {
                     await animationFrame();
-                    while(++x < game.config.width && game.cols[x].length <= 0 && colEdit(x)) {
+                    while (++x < game.config.width && game.cols[x].length <= 0 && colEdit(x)) {
                         await animationFrame();
                     }
                 })();
@@ -805,7 +811,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const newListStr = newRow.split(/[ ,]+/g);
         const newList = [];
         let sum = 0;
-        for(const valueStr of newListStr) {
+        for (const valueStr of newListStr) {
             const value = Math.floor(+valueStr);
             if (value > 0) {
                 newList.push(value);
@@ -819,7 +825,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (sum + newList.length > game.config.width + 1) {
             console.error('Invalid row-size: ' + newRow);
-            console.error({newList, width: game.config.width, sum, length: newList.length, max: sum + newList.length - 1});
+            console.error({
+                newList,
+                width: game.config.width,
+                sum,
+                length: newList.length,
+                max: sum + newList.length - 1
+            });
             alert('Invalid row-size: ' + newRow);
             return;
         }
@@ -879,7 +891,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (rowEdit(y)) {
                 (async () => {
                     await animationFrame();
-                    while(++y < game.config.height && game.rows[y].length <= 0 && rowEdit(y)) {
+                    while (++y < game.config.height && game.rows[y].length <= 0 && rowEdit(y)) {
                         await animationFrame();
                     }
                 })();
@@ -939,7 +951,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return colClick(x, event.shiftKey || event.ctrlKey);
         }
 
-        if(dragLastX !== null && dragLastX === x && dragLastY !== null && dragLastY === y) {
+        if (dragLastX !== null && dragLastX === x && dragLastY !== null && dragLastY === y) {
             dragLastX = null;
             dragLastY = null;
             return;
@@ -947,11 +959,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return gridClick(x, y, event.button > 0 || event.shiftKey);
     };
 
-    let dragType: Nonogram.colorIndexMay|null = null;
-    let dragStartX: number|null = null;
-    let dragStartY: number|null = null;
-    let dragLastX: number|null = null;
-    let dragLastY: number|null = null;
+    let dragType: Nonogram.colorIndexMay | null = null;
+    let dragStartX: number | null = null;
+    let dragStartY: number | null = null;
+    let dragLastX: number | null = null;
+    let dragLastY: number | null = null;
     const dragStartHandler = (event: MouseEvent) => {
         const x = Math.floor((event.clientX - game.config.xOffset) / game.config.scale);
         const y = Math.floor((event.clientY - game.config.yOffset) / game.config.scale);
@@ -993,7 +1005,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const my = Math.floor((event.clientY - game.config.yOffset) / game.config.scale);
         const rx = Math.max(0, Math.min(game.config.width - 1, mx));
         const ry = Math.max(0, Math.min(game.config.height - 1, my));
-        if(mx !== rx || my !== ry) {
+        if (mx !== rx || my !== ry) {
             return dragReset(false);
         }
 
@@ -1002,7 +1014,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const y1 = ry < dragStartY ? ry : dragStartY;
         const y2 = ry > dragStartY ? ry : dragStartY;
 
-        if(x1 === x2 && y1 === y2) {
+        if (x1 === x2 && y1 === y2) {
             dragLastX = null;
             dragLastY = null;
             return dragReset(false);
