@@ -1,2 +1,2 @@
-body{margin:0}#introView label{display:block}
+body{margin:0}#importView label,#introView label{display:block}#importView textarea{min-width:100px;width:90vw;min-height:10em;height:50vh}
 /*# sourceMappingURL=style.css.map */
